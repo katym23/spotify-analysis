@@ -1,0 +1,9 @@
+venv/
+.venv/
+.data/
+.analysis_files/
+.user_uploads/
+.env
+*.csv
+*.json
+*.parquet

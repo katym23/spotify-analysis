@@ -1,0 +1,9 @@
+pandas
+numpy
+uuid
+scikit-learn
+tqdm
+requests
+streamlit
+plotly
+python-dotenv
