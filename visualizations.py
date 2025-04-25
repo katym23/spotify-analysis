@@ -28,49 +28,74 @@ def show():
 
     # # Date range picker
 
-    # # Make sure timestamp_listened is datetime
-    # final_df['timestamp_listened'] = pd.to_datetime(final_df['timestamp_listened'], errors='coerce')
-    # final_df['date_listened'] = final_df['timestamp_listened'].dt.date
+    # Extract date components
+    # Extract components
+    final_df['year'] = final_df['timestamp_listened'].dt.year
+    final_df['quarter'] = final_df['timestamp_listened'].dt.to_period('Q').astype(str)
+    final_df['month'] = final_df['timestamp_listened'].dt.month
+    final_df['month_name'] = final_df['timestamp_listened'].dt.strftime('%B')
 
-    # # Get min and max as datetime.date
-    # min_date = final_df['date_listened'].min().date()
-    # max_date = final_df['date_listened'].max().date()
+    # Required: Year dropdown
+    selected_year = st.selectbox("Select year:", sorted(final_df['year'].unique(), reverse=True))
 
-    # st.write(final_df['date_listened'].dtype)
+    # Filter to selected year
+    year_df = final_df[final_df['year'] == selected_year]
 
-    # # Let user pick date range
-    # date_range = st.date_input(
-    #     "Filter by date range:",
-    #     [min_date, max_date],
-    #     min_value=min_date,
-    #     max_value=max_date
-    # )
+    # Optional: Quarter dropdown
+    quarter_options = ["All"] + sorted(year_df['quarter'].unique())
+    selected_quarter = st.selectbox("Select quarter (optional):", quarter_options)
 
-    # # Convert date_range (datetime.date) to datetime64[ns]
-    # start = pd.to_datetime(date_range[0])
-    # end = pd.to_datetime(date_range[1])
+    # Determine valid months based on quarter
+    quarter_month_map = {
+        "Q1": [1, 2, 3],
+        "Q2": [4, 5, 6],
+        "Q3": [7, 8, 9],
+        "Q4": [10, 11, 12]
+    }
 
-    # # Apply filter
-    # filtered_df = final_df[
-    #     (final_df['timestamp_listened'] >= start) &
-    #     (final_df['timestamp_listened'] <= end)
-    # ]
+    # Default: All months in the year
+    valid_months = year_df['month'].unique()
+    if selected_quarter != "All":
+        q = selected_quarter.split("Q")[1][0]  # Get '1' from 'Q1 2025'
+        valid_months = quarter_month_map[f"Q{q}"]
+
+    # Filter month options to valid months in the quarter
+    valid_month_names = year_df[year_df['month'].isin(valid_months)]['month_name'].unique()
+    valid_month_names = sorted(valid_month_names, key=lambda m: pd.to_datetime(m, format='%B').month)
+    month_options = ["All"] + valid_month_names
+
+    # Optional: Month dropdown (dependent on quarter)
+    selected_month = st.selectbox("Select month (optional):", month_options)
+
+    # Re-filter DataFrame
+    filtered_df = year_df.copy()
+
+    if selected_quarter != "All":
+        filtered_df = filtered_df[filtered_df['quarter'] == selected_quarter]
+
+    if selected_month != "All":
+        # Validate month is in selected quarter
+        month_num = pd.to_datetime(selected_month, format='%B').month
+        if selected_quarter != "All" and month_num not in valid_months:
+            st.warning("Selected month is not in the selected quarter. Resetting to 'All'.")
+        else:
+            filtered_df = filtered_df[filtered_df['month_name'] == selected_month]
 
     st.subheader("🎤 Top Artists")
-    top_artists = final_df['artist'].value_counts().head(10).sort_values(ascending=False)
+    top_artists = filtered_df['artist'].value_counts().head(10).sort_values(ascending=False)
     top_artists_chart = px.bar(top_artists)
     st.plotly_chart(top_artists_chart)
 
     st.subheader("📅 Listening Activity Over Time")
 
-    final_df['year'] = final_df['timestamp_listened'].dt.year
-    final_df['month'] = final_df['timestamp_listened'].dt.month
-    monthly = final_df.groupby(['year', 'month']).size().reset_index(name='Plays')
+    filtered_df['year'] = filtered_df['timestamp_listened'].dt.year
+    filtered_df['month'] = filtered_df['timestamp_listened'].dt.month
+    monthly = filtered_df.groupby(['year', 'month']).size().reset_index(name='Plays')
     monthly['Date'] = pd.to_datetime(monthly[['year', 'month']].assign(DAY=1))
     listening_activity_chart = px.line(monthly, x='Date', y='Plays')
     st.plotly_chart(listening_activity_chart)
 
     st.subheader("Top Genres")
-    top_genres = final_df['general_genre'].value_counts().head(10).sort_values(ascending=False)
+    top_genres = filtered_df['general_genre'].value_counts().head(10).sort_values(ascending=False)
     top_genres_chart = px.bar(top_genres)
     st.plotly_chart(top_genres_chart)
