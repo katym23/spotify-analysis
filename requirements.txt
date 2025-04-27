@@ -7,3 +7,4 @@ requests
 streamlit
 plotly
 python-dotenv
+supabase

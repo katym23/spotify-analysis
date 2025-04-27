@@ -33,7 +33,8 @@ import json
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import OneHotEncoder
 import streamlit as st
-from dotenv import load_dotenv
+from supabase import create_client
+import tempfile
 
 # General Helper Functions
 
@@ -125,9 +126,8 @@ def rate_artist_complexity(df):
 
 # Helper Functions for get_spotify_data()
 
-load_dotenv()
-default_id = os.getenv("CLIENT_ID")
-default_secret = os.getenv("CLIENT_SECRET")
+default_id = st.secrets["CLIENT_ID"]
+default_secret = st.secrets["CLIENT_SECRET"]
 
 def spotify_access(client_id_param=default_id, client_secret_param=default_secret):
     """
@@ -1210,3 +1210,77 @@ def get_clean_data(person, client_id=default_id, client_secret=default_secret, o
 
     return cleaned_analysis_data
 
+## Reading & writing files to supabase
+
+supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+def upload_file_to_supabase(bucket_name: str, file_path: str, file_data: bytes, overwrite: bool = True):
+    """
+    Upload (or update) a file to Supabase Storage.
+    - If the file exists and overwrite=True -> call update()
+    - If the file doesn’t exist                -> call upload()
+    """
+    bucket = supabase.storage.from_(bucket_name)
+    exists = file_exists_in_bucket(bucket_name, file_path)
+
+    if exists:
+        if not overwrite:
+            st.info(f"ℹ️ Skipping upload of existing file `{file_path}`.")
+            return
+        # overwrite via update()
+        res = bucket.update(path=file_path, file=file_data)
+    else:
+        # initial upload
+        res = bucket.upload(path=file_path, file=file_data)
+
+    if hasattr(res, "error") and res.error:
+        raise Exception(f"Upload failed for `{file_path}`: {res.error.message}")
+
+def download_file_from_supabase(bucket: str, path: str) -> bytes:
+    return supabase.storage.from_(bucket).download(path)
+
+def save_df_to_supabase(user_id: str, df: pd.DataFrame):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as tmp:
+        df.to_parquet(tmp.name)
+        tmp.seek(0)
+        upload_file_to_supabase("user-data", f"{user_id}/final_df.parquet", tmp.read())
+
+def load_df_from_supabase(user_id: str) -> pd.DataFrame:
+    raw_bytes = download_file_from_supabase("user-data", f"{user_id}/final_df.parquet")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as tmp:
+        tmp.write(raw_bytes)
+        tmp.seek(0)
+        return pd.read_parquet(tmp.name)
+
+def save_raw_json_to_supabase(user_id: str, json_str: str):
+    upload_file_to_supabase("user-data", f"{user_id}/spotify_raw.json", json_str.encode("utf-8"))
+
+def load_raw_json_from_supabase(user_id: str) -> pd.DataFrame:
+    raw_bytes = download_file_from_supabase("user-data", f"{user_id}/spotify_raw.json")
+    return pd.read_json(raw_bytes)
+
+def delete_user_files(user_id: str):
+    bucket = "user-data"
+    paths = [f"{user_id}/spotify_raw.json", f"{user_id}/final_df.parquet"]
+    for path in paths:
+        try:
+            supabase.storage.from_(bucket).remove([path])
+        except Exception as e:
+            print(f"Failed to delete {path}: {e}")
+
+def file_exists_in_bucket(bucket_name: str, file_path: str) -> bool:
+    try:
+        res = supabase.storage.from_(bucket_name).download(file_path)
+        return True  # if download works, file exists
+    except Exception as e:
+        return False  # if download fails, file doesn't exist
+    
+def debug_list_files(bucket_name):
+    """Debug: List all files in the bucket."""
+    try:
+        all_files = supabase.storage.from_("user-data").list("katym24/")
+        st.write("Files in bucket:", all_files)
+        for f in all_files:
+            st.write(f)
+    except Exception as e:
+        st.error(f"Error listing files: {e}")

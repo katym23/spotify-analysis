@@ -3,6 +3,7 @@ venv/
 .data/
 .analysis_files/
 .user_uploads/
+.streamlit/secrets.toml
 .env
 *.csv
 *.json
