@@ -7,6 +7,7 @@ from spotify_funcs import *
 
 def show():
     st.title("📊 Visualize Your Spotify Data")
+    sub_tabs = st.tabs(["Top Artists", "Timeline", "Genres"])
 
     if 'spotify_df' not in st.session_state:
         st.warning("⚠️ No data found. Please upload data on the home page!")
@@ -70,19 +71,22 @@ def show():
             else:
                 filtered_df = filtered_df[filtered_df['month_name'] == selected_month]
 
-    st.subheader("🎤 Top Artists")
-    top_artists = filtered_df['artist'].value_counts().head(10).sort_values(ascending=False)
-    top_artists_chart = px.bar(top_artists)
-    st.plotly_chart(top_artists_chart)
+    with sub_tabs[0]:
+        st.subheader("🎤 Top Artists")
+        top_artists = filtered_df['artist'].value_counts().head(10).sort_values(ascending=False)
+        top_artists_chart = px.bar(top_artists)
+        st.plotly_chart(top_artists_chart)
 
-    st.subheader("📅 Listening Activity Over Time")
+    with sub_tabs[1]:
+        st.subheader("📅 Listening Activity Over Time")
 
-    filtered_df['date_listened'] = filtered_df['timestamp_listened'].dt.date
-    daily = filtered_df.groupby('date_listened').size().reset_index(name='Plays')
-    listening_activity_chart = px.line(daily, x='date_listened', y='Plays')
-    st.plotly_chart(listening_activity_chart)
+        filtered_df['date_listened'] = filtered_df['timestamp_listened'].dt.date
+        daily = filtered_df.groupby('date_listened').size().reset_index(name='Plays')
+        listening_activity_chart = px.line(daily, x='date_listened', y='Plays')
+        st.plotly_chart(listening_activity_chart)
 
-    st.subheader("Top Genres")
-    top_genres = filtered_df['general_genre'].value_counts().head(10).sort_values(ascending=False)
-    top_genres_chart = px.bar(top_genres)
-    st.plotly_chart(top_genres_chart)
+    with sub_tabs[2]:
+        st.subheader("Top Genres")
+        top_genres = filtered_df['general_genre'].value_counts().head(10).sort_values(ascending=False)
+        top_genres_chart = px.bar(top_genres)
+        st.plotly_chart(top_genres_chart)
