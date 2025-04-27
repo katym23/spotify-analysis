@@ -3,26 +3,16 @@ import pandas as pd
 import os
 import plotly.express as px
 import plotly.graph_objects as go
+from spotify_funcs import *
 
 def show():
     st.title("📊 Visualize Your Spotify Data")
 
-    # ✅ Get user ID from session state
-    if "current_user_id" not in st.session_state:
-        st.warning("Please enter your ID on the Home page first.")
+    if 'spotify_df' not in st.session_state:
+        st.warning("⚠️ No data found. Please upload data on the home page!")
         st.stop()
-
-    user_id = st.session_state["current_user_id"]
-
-    UPLOAD_DIR = "user_uploads"
-    final_df_path = os.path.join(UPLOAD_DIR, f"{user_id}_final.parquet")
-
-    # Load the processed final_df instead of reprocessing
-    if not os.path.exists(final_df_path):
-        st.warning("⚠️ No processed data found for this user. Please go to the Home page and upload your data first.")
-        st.stop()
-
-    final_df = pd.read_parquet(final_df_path)
+    else:
+        final_df = st.session_state.spotify_df
 
     # === Visualizations ===
 
@@ -87,11 +77,9 @@ def show():
 
     st.subheader("📅 Listening Activity Over Time")
 
-    filtered_df['year'] = filtered_df['timestamp_listened'].dt.year
-    filtered_df['month'] = filtered_df['timestamp_listened'].dt.month
-    monthly = filtered_df.groupby(['year', 'month']).size().reset_index(name='Plays')
-    monthly['Date'] = pd.to_datetime(monthly[['year', 'month']].assign(DAY=1))
-    listening_activity_chart = px.line(monthly, x='Date', y='Plays')
+    filtered_df['date_listened'] = filtered_df['timestamp_listened'].dt.date
+    daily = filtered_df.groupby('date_listened').size().reset_index(name='Plays')
+    listening_activity_chart = px.line(daily, x='date_listened', y='Plays')
     st.plotly_chart(listening_activity_chart)
 
     st.subheader("Top Genres")

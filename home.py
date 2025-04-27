@@ -22,6 +22,7 @@ def show():
     if parquet_exists:
         st.success("✅ Found existing data! Loading it...")
         df = load_df_from_supabase(user_id)
+        st.session_state.spotify_df = df
     else:
         st.warning("⚠️ No saved Spotify data found for your ID.")
 
@@ -60,6 +61,9 @@ def show():
             return df
 
         df = generate_spotify_df(df, client_id=default_id, client_secret=default_secret)
+
+        if 'spotify_df' not in st.session_state:
+            st.session_state.spotify_df = df
 
         # Fix UUID columns if needed
         for col in df.columns:
