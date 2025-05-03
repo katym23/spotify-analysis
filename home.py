@@ -1,8 +1,9 @@
 import streamlit as st
-import os, uuid
+import uuid
 import pandas as pd
 from spotify_funcs import *
-from supabase import create_client, Client
+import plotly.express as px
+import plotly.graph_objects as go
 
 def show():
     # App title
@@ -10,11 +11,12 @@ def show():
 
     # Ask for user ID
     user_id = st.text_input("Enter your name or ID to begin:", key="user_id")
-    st.session_state["current_user_id"] = user_id
     parquet_path = f"{user_id}/final_df.parquet"  # The file path where the user data is stored
 
     if not user_id:
         st.stop()
+
+    st.session_state["current_user_id"] = user_id
 
     # 1. Check if Parquet file already exists in the user-specific path
 
@@ -76,6 +78,48 @@ def show():
         st.success("🎉 Your Spotify data has been processed and saved!")
 
     # Show the final dataset
-    st.write("🎧 Final Dataset:")
-    st.dataframe(df)
-    st.write("Go check out the other tabs for an analysis of your data :-)")
+    # st.write("🎧 Final Dataset:")
+    # st.dataframe(df)
+    # st.write("Go check out the other tabs for an analysis of your data :-)")
+
+    # build dashboard
+    # y_axis_attr = st.sidebar.selectbox("Choose a feature: ", ["artist", "track-artist", "album", "general_genre"])
+    # tooltip_attrs = st.sidebar.multiselect("Select attributes for tooltip:", ["artist", "tracks", "albums", "genres"])
+    # tooltip_attrs = {attr: True for attr in tooltip_attrs if attr != y_axis_attr}  # Exclude the y-axis attribute
+    # # plot_data = filtered_df.groupby(y_axis_attr).size().reset_index(name='count').sort_values(by='count', ascending=False)
+    # agg_df_multi = (
+    #     df
+    #     .groupby(y_axis_attr, as_index=False)
+    #     .agg(
+    #         count  = ("artist", "size"),
+    #         genres = ("general_genre", lambda x: ", ".join(x.unique())),
+    #         tracks = ("track", lambda x: ", ".join(x)),
+    #         albums = ("album", lambda x: ", ".join(x.unique())),
+    #         artist = ("artist", lambda x: ", ".join(x.unique())),
+    #     )
+    # ).sort_values(by='count', ascending=False)
+    # plot_data = agg_df_multi.head(10).sort_values(by='count')  # Limit to top 10 for better visualization
+    # fig = px.bar(
+    #     data_frame=plot_data,
+    #     y=y_axis_attr,
+    #     x='count',
+    #     hover_data = tooltip_attrs
+    # )
+    # fig.update_xaxes(categoryorder="category descending")
+    # st.plotly_chart(fig)
+
+    sunburst_df = df.groupby(['general_genre', 'artist'])['track_id'].count().reset_index()
+    sunburst_df = sunburst_df.sort_values(by='track_id', ascending=False).head(25)
+    sunburst_df.rename(columns={'general_genre': 'Genre',
+                                'artist': 'Artist',
+                                'track_id': 'Listens'}, inplace=True)
+    fig = px.sunburst (
+        sunburst_df,
+        path=['Genre', 'Artist'],
+        values='Listens',
+        color='Genre',
+        color_discrete_sequence=px.colors.qualitative.Set3
+    )
+
+    fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
+    st.plotly_chart(fig)
