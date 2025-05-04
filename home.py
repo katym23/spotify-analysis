@@ -18,11 +18,14 @@ def show():
 
     st.session_state["current_user_id"] = user_id
 
-    # 1. Check if Parquet file already exists in the user-specific path
+    # Create a placeholder for the success message
+    success_message = st.empty()
 
+    # 1. Check if Parquet file already exists in the user-specific path
     parquet_exists = file_exists_in_bucket("user-data", parquet_path)
     if parquet_exists:
-        st.success("✅ Found existing data! Loading it...")
+        # Display the success message
+        success_message.success("✅ Found existing data! Loading it...")
         df = load_df_from_supabase(user_id)
         st.session_state.spotify_df = df
     else:
@@ -48,7 +51,8 @@ def show():
             all_json_records.extend(read_spotify_json([f]).to_dict(orient="records"))
             progress_bar.progress((idx + 1) / total)
 
-        st.success("✅ All files read. Processing your Spotify data...")
+        # Success after all files read
+        success_message.success("✅ All files read. Processing your Spotify data...")
 
         # 5. Build full dataframe from the JSON records
         df = pd.DataFrame(all_json_records)
@@ -75,51 +79,93 @@ def show():
         # 7. Save the final dataframe as Parquet
         save_df_to_supabase(user_id, df)
 
-        st.success("🎉 Your Spotify data has been processed and saved!")
+        success_message.success("🎉 Your Spotify data has been processed and saved!")
 
-    # Show the final dataset
-    # st.write("🎧 Final Dataset:")
-    # st.dataframe(df)
-    # st.write("Go check out the other tabs for an analysis of your data :-)")
+    # Create columns for layout
+    left_col, right_col = st.columns([1, 2])
+
+    # Extract date components
+    df['year'] = df['timestamp_listened'].dt.year
+    df['quarter'] = df['timestamp_listened'].dt.to_period('Q').astype(str)
+    df['month'] = df['timestamp_listened'].dt.month
+    df['month_name'] = df['timestamp_listened'].dt.strftime('%B')
+
+    # Required: Year dropdown
+    selected_year = st.sidebar.selectbox("Select year:", ["All"] + (sorted(df['year'].unique(), reverse=True)))
+
+    # Filter to selected year
+    if selected_year == 'All':
+        filtered_df = df.copy()
+    else:
+        filtered_df = df[df['year'] == selected_year]
+        # Optional: Quarter dropdown
+        quarter_options = ["All"] + sorted(filtered_df['quarter'].unique())
+        selected_quarter = st.sidebar.selectbox("Select quarter (optional):", quarter_options)
+
+        # Determine valid months based on quarter
+        quarter_month_map = {
+            "Q1": [1, 2, 3],
+            "Q2": [4, 5, 6],
+            "Q3": [7, 8, 9],
+            "Q4": [10, 11, 12]
+        }
+
+        # Default: All months in the year
+        valid_months = filtered_df['month'].unique()
+        if selected_quarter != "All":
+            q = selected_quarter.split("Q")[1][0]  # Get '1' from 'Q1 2025'
+            valid_months = quarter_month_map[f"Q{q}"]
+
+        # Filter month options to valid months in the quarter
+        valid_month_names = filtered_df[filtered_df['month'].isin(valid_months)]['month_name'].unique()
+        valid_month_names = sorted(valid_month_names, key=lambda m: pd.to_datetime(m, format='%B').month)
+        month_options = ["All"] + valid_month_names
+
+        # Optional: Month dropdown (dependent on quarter)
+        selected_month = st.sidebar.selectbox("Select month (optional):", month_options)
+
+        if selected_quarter != "All":
+            filtered_df = filtered_df[filtered_df['quarter'] == selected_quarter]
+
+        if selected_month != "All":
+            # Validate month is in selected quarter
+            month_num = pd.to_datetime(selected_month, format='%B').month
+            if selected_quarter != "All" and month_num not in valid_months:
+                st.warning("Selected month is not in the selected quarter. Resetting to 'All'.")
+            else:
+                filtered_df = filtered_df[filtered_df['month_name'] == selected_month]
+
+    st.session_state["filtered_df"] = filtered_df
 
     # build dashboard
-    # y_axis_attr = st.sidebar.selectbox("Choose a feature: ", ["artist", "track-artist", "album", "general_genre"])
-    # tooltip_attrs = st.sidebar.multiselect("Select attributes for tooltip:", ["artist", "tracks", "albums", "genres"])
-    # tooltip_attrs = {attr: True for attr in tooltip_attrs if attr != y_axis_attr}  # Exclude the y-axis attribute
-    # # plot_data = filtered_df.groupby(y_axis_attr).size().reset_index(name='count').sort_values(by='count', ascending=False)
-    # agg_df_multi = (
-    #     df
-    #     .groupby(y_axis_attr, as_index=False)
-    #     .agg(
-    #         count  = ("artist", "size"),
-    #         genres = ("general_genre", lambda x: ", ".join(x.unique())),
-    #         tracks = ("track", lambda x: ", ".join(x)),
-    #         albums = ("album", lambda x: ", ".join(x.unique())),
-    #         artist = ("artist", lambda x: ", ".join(x.unique())),
-    #     )
-    # ).sort_values(by='count', ascending=False)
-    # plot_data = agg_df_multi.head(10).sort_values(by='count')  # Limit to top 10 for better visualization
-    # fig = px.bar(
-    #     data_frame=plot_data,
-    #     y=y_axis_attr,
-    #     x='count',
-    #     hover_data = tooltip_attrs
-    # )
-    # fig.update_xaxes(categoryorder="category descending")
-    # st.plotly_chart(fig)
+    with left_col:
+        sunburst_df = filtered_df.groupby(['general_genre', 'genre1', 'artist'])['track_id'].count().reset_index()
+        sunburst_df = sunburst_df.sort_values(by='track_id', ascending=False).head(25)
+        sunburst_df.rename(columns={'general_genre': 'Genre',
+                                    'genre1': 'Sub Genre',
+                                    'artist': 'Artist',
+                                    'track_id': 'Listens'}, inplace=True)
+        fig = px.sunburst (
+            sunburst_df,
+            path=['Genre', 'Artist'],
+            values='Listens',
+            color='Genre',
+            hover_data='Sub Genre',
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
 
-    sunburst_df = df.groupby(['general_genre', 'artist'])['track_id'].count().reset_index()
-    sunburst_df = sunburst_df.sort_values(by='track_id', ascending=False).head(25)
-    sunburst_df.rename(columns={'general_genre': 'Genre',
-                                'artist': 'Artist',
-                                'track_id': 'Listens'}, inplace=True)
-    fig = px.sunburst (
-        sunburst_df,
-        path=['Genre', 'Artist'],
-        values='Listens',
-        color='Genre',
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
+        fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
+        st.plotly_chart(fig)
 
-    fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
-    st.plotly_chart(fig)
+    with right_col:
+        filtered_df['date_listened'] = filtered_df['timestamp_listened'].dt.date
+        daily_listens_df = filtered_df['date_listened'].value_counts().sort_index()
+        daily_listens_df = daily_listens_df.reset_index()
+        daily_listens_df.columns = ['Date', 'Listens']
+
+        # Plot with Plotly
+        fig = px.bar(daily_listens_df, x='Date', y='Listens', title='Listening Activity by Day', color_discrete_sequence=[px.colors.qualitative.Set3[2]])
+        fig.update_layout(xaxis_title='Date', yaxis_title='Number of Songs Played')
+
+        # Show in Streamlit
+        st.plotly_chart(fig, use_container_width=True)

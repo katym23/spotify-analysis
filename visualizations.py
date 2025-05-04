@@ -17,73 +17,40 @@ def show():
     st.title("📊 Visualize Your Spotify Data")
     sub_tabs = st.tabs(["Top Artists", "Timeline", "Genres"])
 
-    if 'spotify_df' not in st.session_state:
+    if 'filtered_df' not in st.session_state:
         st.warning("⚠️ No data found. Please upload data on the home page!")
         st.stop()
     else:
-        final_df = st.session_state.spotify_df
+        filtered_df = st.session_state.filtered_df
 
     # === Visualizations ===
 
-    # # Date range picker
-
-    # Extract date components
-    # Extract components
-    final_df['year'] = final_df['timestamp_listened'].dt.year
-    final_df['quarter'] = final_df['timestamp_listened'].dt.to_period('Q').astype(str)
-    final_df['month'] = final_df['timestamp_listened'].dt.month
-    final_df['month_name'] = final_df['timestamp_listened'].dt.strftime('%B')
-
-    # Required: Year dropdown
-    selected_year = st.sidebar.selectbox("Select year:", ["All"] + (sorted(final_df['year'].unique(), reverse=True)))
-
-    # Filter to selected year
-    if selected_year == 'All':
-        filtered_df = final_df.copy()
-    else:
-        filtered_df = final_df[final_df['year'] == selected_year]
-        # Optional: Quarter dropdown
-        quarter_options = ["All"] + sorted(filtered_df['quarter'].unique())
-        selected_quarter = st.sidebar.selectbox("Select quarter (optional):", quarter_options)
-
-        # Determine valid months based on quarter
-        quarter_month_map = {
-            "Q1": [1, 2, 3],
-            "Q2": [4, 5, 6],
-            "Q3": [7, 8, 9],
-            "Q4": [10, 11, 12]
-        }
-
-        # Default: All months in the year
-        valid_months = filtered_df['month'].unique()
-        if selected_quarter != "All":
-            q = selected_quarter.split("Q")[1][0]  # Get '1' from 'Q1 2025'
-            valid_months = quarter_month_map[f"Q{q}"]
-
-        # Filter month options to valid months in the quarter
-        valid_month_names = filtered_df[filtered_df['month'].isin(valid_months)]['month_name'].unique()
-        valid_month_names = sorted(valid_month_names, key=lambda m: pd.to_datetime(m, format='%B').month)
-        month_options = ["All"] + valid_month_names
-
-        # Optional: Month dropdown (dependent on quarter)
-        selected_month = st.sidebar.selectbox("Select month (optional):", month_options)
-
-        if selected_quarter != "All":
-            filtered_df = filtered_df[filtered_df['quarter'] == selected_quarter]
-
-        if selected_month != "All":
-            # Validate month is in selected quarter
-            month_num = pd.to_datetime(selected_month, format='%B').month
-            if selected_quarter != "All" and month_num not in valid_months:
-                st.warning("Selected month is not in the selected quarter. Resetting to 'All'.")
-            else:
-                filtered_df = filtered_df[filtered_df['month_name'] == selected_month]
-
     with sub_tabs[0]:
-        st.subheader("🎤 Top Artists")
-        top_artists = filtered_df['artist'].value_counts().head(10).sort_values(ascending=False)
-        top_artists_chart = px.bar(top_artists)
-        st.plotly_chart(top_artists_chart)
+        st.subheader("🎤 Top Picks")
+
+        y_axis_attr = st.sidebar.selectbox("Choose a feature: ", ["artist", "track-artist", "album", "general_genre"])
+        tooltip_attrs = st.sidebar.multiselect("Select attributes for tooltip:", ["artist", "tracks", "albums", "genres"])
+        tooltip_attrs = {attr: True for attr in tooltip_attrs if attr != y_axis_attr}  # Exclude the y-axis attribute
+        agg_df_multi = (
+            filtered_df
+            .groupby(y_axis_attr, as_index=False)
+            .agg(
+                count  = ("artist", "size"),
+                genres = ("general_genre", lambda x: ", ".join(x.unique())),
+                tracks = ("track", lambda x: ", ".join(x)),
+                albums = ("album", lambda x: ", ".join(x.unique())),
+                artist = ("artist", lambda x: ", ".join(x.unique())),
+            )
+        ).sort_values(by='count', ascending=False)
+        plot_data = agg_df_multi.head(10).sort_values(by='count')  # Limit to top 10 for better visualization
+        fig = px.bar(
+            data_frame=plot_data,
+            y=y_axis_attr,
+            x='count',
+            hover_data = tooltip_attrs
+        )
+        fig.update_xaxes(categoryorder="category descending")
+        st.plotly_chart(fig)
 
     with sub_tabs[1]:
         st.subheader("📅 Listening Activity Over Time")
